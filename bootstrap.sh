@@ -151,13 +151,13 @@ log "installing service + helper scripts"
 install -d -m 755 /opt/openclaw/bin
 install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" /opt/openclaw/secret
 
-curl -fsSL "$ONBOARD_RAW_BASE/openclaw-onboard/bin/openclaw-onboard" -o /opt/openclaw/bin/openclaw-onboard
-curl -fsSL "$ONBOARD_RAW_BASE/openclaw-onboard/bin/openclaw-update" -o /opt/openclaw/bin/openclaw-update
-curl -fsSL "$ONBOARD_RAW_BASE/openclaw-onboard/bin/tg_tools.py" -o /opt/openclaw/bin/tg_tools.py
+curl -fsSL "$ONBOARD_RAW_BASE/bin/openclaw-onboard" -o /opt/openclaw/bin/openclaw-onboard
+curl -fsSL "$ONBOARD_RAW_BASE/bin/openclaw-update" -o /opt/openclaw/bin/openclaw-update
+curl -fsSL "$ONBOARD_RAW_BASE/bin/tg_tools.py" -o /opt/openclaw/bin/tg_tools.py
 chmod +x /opt/openclaw/bin/openclaw-onboard /opt/openclaw/bin/openclaw-update /opt/openclaw/bin/tg_tools.py
 
 # systemd unit (always fetched)
-curl -fsSL "$ONBOARD_RAW_BASE/openclaw-onboard/systemd/openclaw.service" -o /etc/systemd/system/openclaw.service
+curl -fsSL "$ONBOARD_RAW_BASE/systemd/openclaw.service" -o /etc/systemd/system/openclaw.service
 
 systemctl daemon-reload
 systemctl enable --now openclaw

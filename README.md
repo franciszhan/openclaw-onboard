@@ -12,6 +12,7 @@ Scripts + configs to bootstrap a fresh Ubuntu 22.04 VM into a secure, Tailscale-
 On a fresh VM (as root):
 
 ```bash
+ONBOARD_RAW_BASE=https://raw.githubusercontent.com/<YOUR_GH_ORG>/<REPO>/main \
 curl -fsSL https://raw.githubusercontent.com/<YOUR_GH_ORG>/<REPO>/main/bootstrap.sh | bash
 ```
 
