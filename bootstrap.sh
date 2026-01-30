@@ -22,8 +22,7 @@ OPENCLAW_REPO=${OPENCLAW_REPO:-https://github.com/openclaw/openclaw}
 OPENCLAW_BRANCH=${OPENCLAW_BRANCH:-main}
 
 # Raw base for *this* onboarding repo (required when running via curl):
-# e.g. https://raw.githubusercontent.com/franciszhan/openclaw-onboard/main
-ONBOARD_RAW_BASE=${ONBOARD_RAW_BASE:-""}
+ONBOARD_RAW_BASE=${ONBOARD_RAW_BASE:-"https://raw.githubusercontent.com/franciszhan/openclaw-onboard/main"}
 
 LOG_FILE=/var/log/openclaw-bootstrap.log
 log() { echo "[bootstrap] $*" | tee -a "$LOG_FILE"; }
@@ -81,6 +80,13 @@ if ! id "$OWNER_USER" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "" "$OWNER_USER"
   usermod -aG sudo "$OWNER_USER"
 fi
+
+# Allow automation without ever setting a password for the owner user.
+log "configuring passwordless sudo for $OWNER_USER"
+SUDOERS_FILE="/etc/sudoers.d/90-${OWNER_USER}-nopasswd"
+echo "${OWNER_USER} ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
+chmod 440 "$SUDOERS_FILE"
+visudo -cf "$SUDOERS_FILE"
 
 log "setting up SSH authorized_keys for $OWNER_USER"
 install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.ssh"
