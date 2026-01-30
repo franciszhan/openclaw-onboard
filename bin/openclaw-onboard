@@ -21,8 +21,27 @@ echo "OpenClaw onboarding (owner: $OWNER_USER)"
 echo "- secrets will be written to $SECRET_DIR (600 files)"
 echo ""
 
-read -r -p "Telegram API_ID (leave blank to skip TG): " TG_API_ID || true
-if [[ -n "${TG_API_ID:-}" ]]; then
+read -r -p "Telegram Bot token (BotFather) (leave blank to skip TG bot): " TELEGRAM_BOT_TOKEN || true
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+  ENV_FILE="$SECRET_DIR/openclaw.env"
+  touch "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  chown "$OWNER_USER:$OWNER_USER" "$ENV_FILE"
+
+  # Replace existing TELEGRAM_BOT_TOKEN line if present, else append.
+  if grep -q '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE"; then
+    sed -i "s/^TELEGRAM_BOT_TOKEN=.*/TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN//\//\\/}/" "$ENV_FILE"
+  else
+    echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" >> "$ENV_FILE"
+  fi
+
+  echo "Saved TELEGRAM_BOT_TOKEN to $ENV_FILE"
+fi
+
+echo ""
+read -r -p "Enable advanced Telegram read/search via Telethon user session? (y/N) " USE_TELETHON || true
+if [[ "${USE_TELETHON:-}" == "y" || "${USE_TELETHON:-}" == "Y" ]]; then
+  read -r -p "Telegram API_ID: " TG_API_ID
   read -r -p "Telegram API_HASH: " TG_API_HASH
   read -r -p "Telegram phone (E.164, e.g. +1718...): " TG_PHONE
 
@@ -36,11 +55,9 @@ EOF
   chown "$OWNER_USER:$OWNER_USER" "$TG_ENV"
 
   echo ""
-  echo "Now running Telethon login (you'll get a code in Telegram/SMS)"
+  echo "Running Telethon login (you'll get a code in Telegram/SMS)"
   sudo -u "$OWNER_USER" -H python3 "$BIN_DIR/tg_tools.py" login --phone "$TG_PHONE"
 fi
-
-# Placeholder for other integrations (Google, etc)
 
 echo ""
 echo "Lockout / cleanup"
@@ -66,6 +83,14 @@ echo "Restarting openclaw service"
 systemctl daemon-reload || true
 systemctl restart openclaw || true
 systemctl status openclaw --no-pager || true
+
+echo ""
+echo "Launching OpenClaw wizard (recommended)"
+echo "- This handles model selection, OAuth flows, and daemon wiring."
+echo "- You can exit anytime; rerun later."
+
+# Run as the owner user so wizard writes to their home/config.
+sudo -u "$OWNER_USER" -H openclaw onboard --install-daemon || true
 
 echo ""
 echo "Onboarding complete."
