@@ -7,11 +7,12 @@ Wants=network-online.target
 Type=simple
 User=openclaw
 Group=openclaw
-WorkingDirectory=/opt/openclaw/app
+WorkingDirectory=/opt/openclaw
 Environment=NODE_ENV=production
 # Optional: load secrets/env if present
 EnvironmentFile=-/opt/openclaw/secret/openclaw.env
-ExecStart=/usr/bin/node /opt/openclaw/app/dist/index.js gateway run --bind loopback
+# Use the packaged CLI (npm global install)
+ExecStart=/usr/bin/openclaw gateway run --bind loopback
 Restart=on-failure
 RestartSec=2
 
