@@ -1,0 +1,26 @@
+[Unit]
+Description=OpenClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/opt/openclaw/app
+Environment=NODE_ENV=production
+# Optional: load secrets/env if present
+EnvironmentFile=-/opt/openclaw/secret/openclaw.env
+ExecStart=/usr/bin/node /opt/openclaw/app/dist/index.js gateway run --bind loopback
+Restart=on-failure
+RestartSec=2
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/openclaw /var/log
+
+[Install]
+WantedBy=multi-user.target

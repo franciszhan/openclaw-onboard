@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Interactive onboarding + lockout.
+# Run as root (via sudo).
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Run with sudo" >&2
+  exit 1
+fi
+
+OWNER_USER=${OWNER_USER:-openclaw}
+SECRET_DIR=/opt/openclaw/secret
+BIN_DIR=/opt/openclaw/bin
+APP_DIR=/opt/openclaw/app
+
+install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "$SECRET_DIR"
+
+echo ""
+echo "OpenClaw onboarding (owner: $OWNER_USER)"
+echo "- secrets will be written to $SECRET_DIR (600 files)"
+echo ""
+
+read -r -p "Telegram API_ID (leave blank to skip TG): " TG_API_ID || true
+if [[ -n "${TG_API_ID:-}" ]]; then
+  read -r -p "Telegram API_HASH: " TG_API_HASH
+  read -r -p "Telegram phone (E.164, e.g. +1718...): " TG_PHONE
+
+  TG_ENV="$SECRET_DIR/tg.env"
+  cat > "$TG_ENV" <<EOF
+TG_API_ID=$TG_API_ID
+TG_API_HASH=$TG_API_HASH
+TG_PHONE=$TG_PHONE
+EOF
+  chmod 600 "$TG_ENV"
+  chown "$OWNER_USER:$OWNER_USER" "$TG_ENV"
+
+  echo ""
+  echo "Now running Telethon login (you'll get a code in Telegram/SMS)"
+  sudo -u "$OWNER_USER" -H python3 "$BIN_DIR/tg_tools.py" login --phone "$TG_PHONE"
+fi
+
+# Placeholder for other integrations (Google, etc)
+
+echo ""
+echo "Lockout / cleanup"
+read -r -p "Remove bootstrap SSH keys from /home/$OWNER_USER/.ssh/authorized_keys? (y/N) " ANS || true
+if [[ "${ANS:-}" == "y" || "${ANS:-}" == "Y" ]]; then
+  AK="/home/$OWNER_USER/.ssh/authorized_keys"
+  if [[ -f "$AK" ]]; then
+    cp -a "$AK" "$AK.bak.$(date -u +%Y%m%d_%H%M%S)"
+    # Remove lines containing a bootstrap marker if present; otherwise prompt to open an editor.
+    if grep -q "bootstrap" "$AK"; then
+      sed -i '/bootstrap/d' "$AK"
+      echo "Removed lines containing 'bootstrap' from $AK"
+    else
+      echo "No 'bootstrap' marker found in $AK."
+      echo "Edit it now to remove your old key(s):"
+      echo "  sudo nano $AK"
+    fi
+  fi
+fi
+
+echo ""
+echo "Restarting openclaw service"
+systemctl daemon-reload || true
+systemctl restart openclaw || true
+systemctl status openclaw --no-pager || true
+
+echo ""
+echo "Onboarding complete."

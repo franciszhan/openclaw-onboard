@@ -1,0 +1,8 @@
+[DEFAULT]
+# conservative defaults
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
