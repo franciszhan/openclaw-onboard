@@ -82,14 +82,26 @@ if ! id "$OWNER_USER" >/dev/null 2>&1; then
   usermod -aG sudo "$OWNER_USER"
 fi
 
-log "setting up SSH authorized_keys for $OWNER_USER (optional)"
+log "setting up SSH authorized_keys for $OWNER_USER"
 install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.ssh"
 AK="/home/$OWNER_USER/.ssh/authorized_keys"
-if [[ -n "$OWNER_PUBKEY" ]]; then
-  echo "$OWNER_PUBKEY bootstrap" >> "$AK"
-  chown "$OWNER_USER:$OWNER_USER" "$AK"
-  chmod 600 "$AK"
+
+# If OWNER_PUBKEY not provided, try to inherit any existing root authorized_keys (common on Hetzner images).
+if [[ -z "${OWNER_PUBKEY:-}" && -f /root/.ssh/authorized_keys ]]; then
+  log "OWNER_PUBKEY not set; copying /root/.ssh/authorized_keys -> $AK (marked as bootstrap)"
+  # append with marker so it can be removed during handoff
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    echo "$line bootstrap" >> "$AK"
+  done < /root/.ssh/authorized_keys
 fi
+
+if [[ -n "${OWNER_PUBKEY:-}" ]]; then
+  echo "$OWNER_PUBKEY bootstrap" >> "$AK"
+fi
+
+chown "$OWNER_USER:$OWNER_USER" "$AK"
+chmod 600 "$AK"
 
 log "hardening sshd (disable root login + passwords)"
 install -d -m 755 /etc/ssh/sshd_config.d
