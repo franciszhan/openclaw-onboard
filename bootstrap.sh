@@ -174,11 +174,8 @@ curl -fsSL "$ONBOARD_RAW_BASE/bin/openclaw-update" -o /opt/openclaw/bin/openclaw
 curl -fsSL "$ONBOARD_RAW_BASE/bin/tg_tools.py" -o /opt/openclaw/bin/tg_tools.py
 chmod +x /opt/openclaw/bin/openclaw-onboard /opt/openclaw/bin/openclaw-update /opt/openclaw/bin/tg_tools.py
 
-# systemd unit (always fetched)
-curl -fsSL "$ONBOARD_RAW_BASE/systemd/openclaw.service" -o /etc/systemd/system/openclaw.service
-
-systemctl daemon-reload
-systemctl enable --now openclaw
+# Do NOT install a gateway daemon here; let `openclaw onboard --install-daemon` handle it.
+# Installing a system-level service in bootstrap can conflict with the wizard.
 
 log "bootstrap complete"
 log "Tailscale IP (once joined): $(tailscale ip -4 2>/dev/null || true)"

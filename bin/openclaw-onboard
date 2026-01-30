@@ -21,24 +21,6 @@ echo "OpenClaw onboarding (owner: $OWNER_USER)"
 echo "- secrets will be written to $SECRET_DIR (600 files)"
 echo ""
 
-read -r -p "Telegram Bot token (BotFather) (leave blank to skip TG bot): " TELEGRAM_BOT_TOKEN || true
-if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-  ENV_FILE="$SECRET_DIR/openclaw.env"
-  touch "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
-  chown "$OWNER_USER:$OWNER_USER" "$ENV_FILE"
-
-  # Replace existing TELEGRAM_BOT_TOKEN line if present, else append.
-  if grep -q '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE"; then
-    sed -i "s/^TELEGRAM_BOT_TOKEN=.*/TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN//\//\\/}/" "$ENV_FILE"
-  else
-    echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" >> "$ENV_FILE"
-  fi
-
-  echo "Saved TELEGRAM_BOT_TOKEN to $ENV_FILE"
-fi
-
-echo ""
 read -r -p "Enable advanced Telegram read/search via Telethon user session? (y/N) " USE_TELETHON || true
 if [[ "${USE_TELETHON:-}" == "y" || "${USE_TELETHON:-}" == "Y" ]]; then
   read -r -p "Telegram API_ID: " TG_API_ID
@@ -79,10 +61,13 @@ if [[ "${ANS:-}" == "y" || "${ANS:-}" == "Y" ]]; then
 fi
 
 echo ""
-echo "Restarting openclaw service"
-systemctl daemon-reload || true
-systemctl restart openclaw || true
-systemctl status openclaw --no-pager || true
+echo "Preparing for OpenClaw wizard"
+# If bootstrap installed a system-wide openclaw service, it can conflict with the wizard's daemon install.
+if systemctl list-unit-files | grep -q '^openclaw\.service'; then
+  echo "Found existing system service openclaw.service; stopping + disabling so the wizard can install cleanly"
+  systemctl stop openclaw || true
+  systemctl disable openclaw || true
+fi
 
 echo ""
 echo "Launching OpenClaw wizard (recommended)"
