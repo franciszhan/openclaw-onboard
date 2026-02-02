@@ -86,12 +86,17 @@ if [[ "${ANS:-}" == "y" || "${ANS:-}" == "Y" ]]; then
 fi
 
 echo ""
-echo "Launching OpenClaw wizard (recommended)"
-echo "- This handles model selection, OAuth flows, and daemon wiring."
-echo "- You can exit anytime; rerun later."
-
-# Run as the current user in this SSH session so systemd user services work.
-openclaw onboard --install-daemon || true
+echo "Next: run the OpenClaw wizard manually (recommended)"
+echo "Run this as the openclaw user (NOT via sudo), in your SSH session:"
+echo ""
+echo "  openclaw onboard --install-daemon"
+echo ""
+echo "After the wizard completes, apply security audit fixes:"
+echo ""
+echo "  chmod 700 /home/${OWNER_USER}/.openclaw"
+echo ""
+echo "If you plan to expose the Control UI through a reverse proxy, configure gateway.trustedProxies."
+echo "Otherwise, keep the Control UI local-only (bind loopback) and access via SSH tunnel/Tailscale."
 
 echo ""
-echo "Onboarding complete."
+echo "Onboarding step complete."

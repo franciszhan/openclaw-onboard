@@ -88,6 +88,10 @@ echo "${OWNER_USER} ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE"
 
+# Pre-create OpenClaw state dir with strict perms to satisfy `openclaw security audit`.
+log "pre-creating OpenClaw state dir with strict perms"
+install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.openclaw"
+
 log "setting up SSH authorized_keys for $OWNER_USER"
 install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.ssh"
 AK="/home/$OWNER_USER/.ssh/authorized_keys"
