@@ -55,7 +55,7 @@ EOF
 
   echo ""
   echo "Running Telethon login (you'll get a code in Telegram/SMS)"
-  python3 "$BIN_DIR/tg_tools.py" login --phone "$TG_PHONE"
+  /opt/openclaw/py/bin/python "$BIN_DIR/tg_tools.py" login --phone "$TG_PHONE"
 fi
 
 echo ""

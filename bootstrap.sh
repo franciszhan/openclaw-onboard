@@ -61,9 +61,12 @@ if ! command -v node >/dev/null 2>&1; then
   apt-get install -y nodejs
 fi
 
-log "installing python deps for telethon tooling"
-python3 -m pip install --upgrade pip
-python3 -m pip install telethon python-dotenv
+log "installing python deps for telethon tooling (venv)"
+apt-get install -y python3-venv
+install -d -m 755 /opt/openclaw
+python3 -m venv /opt/openclaw/py
+/opt/openclaw/py/bin/pip install -U pip
+/opt/openclaw/py/bin/pip install telethon python-dotenv
 
 log "installing tailscale"
 if ! command -v tailscale >/dev/null 2>&1; then
