@@ -2,19 +2,36 @@
 set -euo pipefail
 
 # Interactive onboarding + lockout.
-# Run as root (via sudo).
-
-if [[ $EUID -ne 0 ]]; then
-  echo "Run with sudo" >&2
-  exit 1
-fi
+# This script should ultimately run the OpenClaw wizard *as the logged-in user* so
+# `systemctl --user` works.
+#
+# You may invoke it with sudo for convenience; it will drop back to the invoking
+# user for the wizard step.
 
 OWNER_USER=${OWNER_USER:-openclaw}
 SECRET_DIR=/opt/openclaw/secret
 BIN_DIR=/opt/openclaw/bin
-APP_DIR=/opt/openclaw/app
 
-install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "$SECRET_DIR"
+# If started via sudo/root, immediately re-exec as the invoking user so we keep
+# the SSH session's user-systemd / DBus context.
+if [[ ${EUID} -eq 0 && "${1:-}" != "--as-user" ]]; then
+  if [[ -z "${SUDO_USER:-}" ]]; then
+    echo "Run as a normal user (or via sudo from an SSH session)." >&2
+    exit 1
+  fi
+  exec sudo -u "${SUDO_USER}" -H \
+    --preserve-env=XDG_RUNTIME_DIR,DBUS_SESSION_BUS_ADDRESS,SSH_AUTH_SOCK,PATH \
+    "$0" --as-user
+fi
+
+# From here on, we are running as the user in an interactive session.
+if [[ "$(id -un)" != "$OWNER_USER" ]]; then
+  echo "Please run as $OWNER_USER (or: sudo -u $OWNER_USER -H $0 --as-user)" >&2
+  exit 1
+fi
+
+# Ensure secrets dir exists and is owned by the owner user.
+sudo install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "$SECRET_DIR"
 
 echo ""
 echo "OpenClaw onboarding (owner: $OWNER_USER)"
@@ -38,7 +55,16 @@ EOF
 
   echo ""
   echo "Running Telethon login (you'll get a code in Telegram/SMS)"
-  sudo -u "$OWNER_USER" -H python3 "$BIN_DIR/tg_tools.py" login --phone "$TG_PHONE"
+  python3 "$BIN_DIR/tg_tools.py" login --phone "$TG_PHONE"
+fi
+
+echo ""
+echo "Preparing for OpenClaw wizard"
+# If bootstrap installed a system-wide openclaw service, it can conflict with the wizard's daemon install.
+if sudo systemctl list-unit-files | grep -q '^openclaw\.service'; then
+  echo "Found existing system service openclaw.service; stopping + disabling so the wizard can install cleanly"
+  sudo systemctl stop openclaw || true
+  sudo systemctl disable openclaw || true
 fi
 
 echo ""
@@ -47,10 +73,9 @@ read -r -p "Remove bootstrap SSH keys from /home/$OWNER_USER/.ssh/authorized_key
 if [[ "${ANS:-}" == "y" || "${ANS:-}" == "Y" ]]; then
   AK="/home/$OWNER_USER/.ssh/authorized_keys"
   if [[ -f "$AK" ]]; then
-    cp -a "$AK" "$AK.bak.$(date -u +%Y%m%d_%H%M%S)"
-    # Remove lines containing a bootstrap marker if present; otherwise prompt to open an editor.
-    if grep -q "bootstrap" "$AK"; then
-      sed -i '/bootstrap/d' "$AK"
+    sudo cp -a "$AK" "$AK.bak.$(date -u +%Y%m%d_%H%M%S)"
+    if sudo grep -q "bootstrap" "$AK"; then
+      sudo sed -i '/bootstrap/d' "$AK"
       echo "Removed lines containing 'bootstrap' from $AK"
     else
       echo "No 'bootstrap' marker found in $AK."
@@ -61,21 +86,12 @@ if [[ "${ANS:-}" == "y" || "${ANS:-}" == "Y" ]]; then
 fi
 
 echo ""
-echo "Preparing for OpenClaw wizard"
-# If bootstrap installed a system-wide openclaw service, it can conflict with the wizard's daemon install.
-if systemctl list-unit-files | grep -q '^openclaw\.service'; then
-  echo "Found existing system service openclaw.service; stopping + disabling so the wizard can install cleanly"
-  systemctl stop openclaw || true
-  systemctl disable openclaw || true
-fi
-
-echo ""
 echo "Launching OpenClaw wizard (recommended)"
 echo "- This handles model selection, OAuth flows, and daemon wiring."
 echo "- You can exit anytime; rerun later."
 
-# Run as the owner user so wizard writes to their home/config.
-sudo -u "$OWNER_USER" -H openclaw onboard --install-daemon || true
+# Run as the current user in this SSH session so systemd user services work.
+openclaw onboard --install-daemon || true
 
 echo ""
 echo "Onboarding complete."
