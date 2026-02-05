@@ -71,11 +71,10 @@ sudo /opt/openclaw/bin/openclaw-onboard
 This script:
 - optionally enables **Telethon (user session)** for advanced Telegram read/search
 - optionally removes `bootstrap` SSH keys from `/home/openclaw/.ssh/authorized_keys`
+- Note: if you are both the server owner and bot owner, you don't need to remove SSH keys in this step.
 
 
 ## Phase 3 (new owner): run the official OpenClaw wizard
-
-Run this as `openclaw` (NOT via sudo):
 
 ```bash
 openclaw onboard --install-daemon
