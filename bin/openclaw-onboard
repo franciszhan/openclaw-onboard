@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interactive onboarding + lockout.
+# Interactive onboarding.
 # This script should ultimately run the OpenClaw wizard *as the logged-in user* so
 # `systemctl --user` works.
 #
@@ -68,22 +68,6 @@ if sudo systemctl list-unit-files | grep -q '^openclaw\.service'; then
 fi
 
 echo ""
-echo "Lockout / cleanup"
-read -r -p "Remove bootstrap SSH keys from /home/$OWNER_USER/.ssh/authorized_keys? (y/N) " ANS || true
-if [[ "${ANS:-}" == "y" || "${ANS:-}" == "Y" ]]; then
-  AK="/home/$OWNER_USER/.ssh/authorized_keys"
-  if [[ -f "$AK" ]]; then
-    sudo cp -a "$AK" "$AK.bak.$(date -u +%Y%m%d_%H%M%S)"
-    if sudo grep -q "bootstrap" "$AK"; then
-      sudo sed -i '/bootstrap/d' "$AK"
-      echo "Removed lines containing 'bootstrap' from $AK"
-    else
-      echo "No 'bootstrap' marker found in $AK."
-      echo "Edit it now to remove your old key(s):"
-      echo "  sudo nano $AK"
-    fi
-  fi
-fi
 
 echo ""
 echo "Next: run the OpenClaw wizard manually (recommended)"

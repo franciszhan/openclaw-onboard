@@ -4,7 +4,7 @@ Bootstrap scripts to turn a fresh Ubuntu VPS into a **Tailscale-only SSH** box w
 
 This repo is optimized for:
 - you spin up the server + run one bootstrap
-- the new owner runs one command to optionally enable Telethon and remove your temporary access
+- the new owner runs one command to optionally enable Telethon
 - the new owner runs the official `openclaw onboard --install-daemon` wizard (best UX for models/OAuth)
 
 
@@ -35,7 +35,7 @@ What bootstrap does:
 - creates the `openclaw` user
 - configures **key-only SSH** and **disables root SSH login**
 - configures UFW to allow SSH **only on `tailscale0`**
-- copies `/root/.ssh/authorized_keys` → `/home/openclaw/.ssh/authorized_keys` (lines marked with `bootstrap`) so you can SSH as `openclaw`
+- copies `/root/.ssh/authorized_keys` → `/home/openclaw/.ssh/authorized_keys` so you can SSH as `openclaw`
 - prepares OpenClaw directories:
   - `/opt/openclaw/secret` (700)
   - `/home/openclaw/.openclaw` (700)
@@ -54,7 +54,7 @@ tailscale ip -4
 4) Exit root session.
 
 
-## Phase 2 (new owner): optional Telethon + lockout
+## Phase 2 (new owner): optional Telethon
 
 1) SSH in as the `openclaw` user over Tailscale:
 
@@ -70,8 +70,6 @@ sudo /opt/openclaw/bin/openclaw-onboard
 
 This script:
 - optionally enables **Telethon (user session)** for advanced Telegram read/search
-- optionally removes `bootstrap` SSH keys from `/home/openclaw/.ssh/authorized_keys`
-- Note: if you are both the server owner and bot owner, you don't need to remove SSH keys in this step.
 
 
 ## Phase 3 (new owner): run the official OpenClaw wizard
