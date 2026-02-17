@@ -98,23 +98,41 @@ install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.openclaw
 log "setting up SSH authorized_keys for $OWNER_USER"
 install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.ssh"
 AK="/home/$OWNER_USER/.ssh/authorized_keys"
+TMP_AK="$(mktemp)"
 
-# If OWNER_PUBKEY not provided, try to inherit any existing root authorized_keys (common on Hetzner images).
-if [[ -z "${OWNER_PUBKEY:-}" && -f /root/.ssh/authorized_keys ]]; then
-  log "OWNER_PUBKEY not set; copying /root/.ssh/authorized_keys -> $AK (marked as bootstrap)"
-  # append with marker so it can be removed during handoff
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    echo "$line bootstrap" >> "$AK"
-  done < /root/.ssh/authorized_keys
-fi
+# Build a clean, deduplicated authorized_keys file atomically.
+# Priority:
+#  1) OWNER_PUBKEY env override (if provided)
+#  2) /root/.ssh/authorized_keys (common on cloud images)
+#  3) existing owner authorized_keys (preserve prior access)
 
 if [[ -n "${OWNER_PUBKEY:-}" ]]; then
-  echo "$OWNER_PUBKEY bootstrap" >> "$AK"
+  printf '%s bootstrap\n' "${OWNER_PUBKEY//$'\r'/}" >> "$TMP_AK"
 fi
 
-chown "$OWNER_USER:$OWNER_USER" "$AK"
-chmod 600 "$AK"
+for SRC in /root/.ssh/authorized_keys "$AK"; do
+  if [[ -f "$SRC" ]]; then
+    # Strip CRLF, skip blank/comment-only lines, keep valid-looking key lines.
+    sed -e 's/\r$//' "$SRC" \
+      | awk 'NF && $1 !~ /^#/ {print}' \
+      >> "$TMP_AK"
+  fi
+done
+
+# Deduplicate exact lines while preserving order.
+awk '!seen[$0]++' "$TMP_AK" > "${TMP_AK}.dedup"
+mv "${TMP_AK}.dedup" "$TMP_AK"
+
+if [[ ! -s "$TMP_AK" ]]; then
+  log "ERROR: no SSH public keys found. Provide OWNER_PUBKEY or ensure /root/.ssh/authorized_keys exists."
+  rm -f "$TMP_AK"
+  exit 5
+fi
+
+install -m 600 -o "$OWNER_USER" -g "$OWNER_USER" "$TMP_AK" "$AK"
+KEY_COUNT="$(awk 'NF' "$AK" | wc -l | tr -d ' ')"
+log "authorized_keys ready for $OWNER_USER: $KEY_COUNT key(s) at $AK"
+rm -f "$TMP_AK"
 
 log "hardening sshd (disable root login + passwords)"
 install -d -m 755 /etc/ssh/sshd_config.d
