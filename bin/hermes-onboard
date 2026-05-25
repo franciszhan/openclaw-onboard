@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Minimal interactive Hermes setup for the owner user.
+# Run this as the owner user over Tailscale, not as root.
+
+if [[ -z "${OWNER_USER:-}" && -r /opt/hermes/OWNER ]]; then
+  OWNER_USER="$(tr -d '\n\r' < /opt/hermes/OWNER)"
+fi
+OWNER_USER=${OWNER_USER:-$(id -un)}
+HERMES_SECRET_DIR=${HERMES_SECRET_DIR:-/opt/hermes/secret}
+
+export PATH="$HOME/.local/bin:$PATH"
+
+if [[ $EUID -eq 0 ]]; then
+  echo "Run as the owner user, not root. Example: ssh ${OWNER_USER}@<tailscale-ip> then /opt/hermes/bin/hermes-onboard" >&2
+  exit 1
+fi
+
+if [[ "$(id -un)" != "$OWNER_USER" ]]; then
+  echo "Warning: running as $(id -un), but OWNER_USER is $OWNER_USER. Continuing because this may be intentional."
+fi
+
+if ! command -v hermes >/dev/null 2>&1; then
+  echo "hermes CLI not found on PATH. Try opening a new SSH session, or run:" >&2
+  echo '  export PATH="$HOME/.local/bin:$PATH"' >&2
+  exit 1
+fi
+
+sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" "$HERMES_SECRET_DIR"
+install -d -m 700 "$HOME/.hermes"
+
+cat <<EOF
+
+Hermes onboarding
+
+You will be prompted for:
+- model/provider auth in: hermes setup
+- Telegram bot token in: hermes gateway setup
+
+Keep gateway/admin surfaces local or Tailscale-only unless you explicitly intend to expose them.
+EOF
+
+read -r -p "Run 'hermes setup' now? (Y/n) " RUN_SETUP || true
+if [[ ! "${RUN_SETUP:-}" =~ ^[Nn]$ ]]; then
+  hermes setup
+fi
+
+read -r -p "Run 'hermes gateway setup' now? (Y/n) " RUN_GATEWAY_SETUP || true
+if [[ ! "${RUN_GATEWAY_SETUP:-}" =~ ^[Nn]$ ]]; then
+  hermes gateway setup
+fi
+
+read -r -p "Install Hermes gateway as a background user service? (Y/n) " INSTALL_GATEWAY || true
+if [[ ! "${INSTALL_GATEWAY:-}" =~ ^[Nn]$ ]]; then
+  # Linger lets the user service survive SSH logout on normal systemd hosts.
+  sudo loginctl enable-linger "$(id -un)" || true
+  hermes gateway install
+  hermes gateway start
+fi
+
+echo ""
+echo "Hermes status:"
+hermes gateway status || true
+
+echo ""
+echo "Next steps:"
+echo "1. Message your Telegram bot."
+echo "2. Approve the pairing code on this server:"
+echo "   hermes pairing approve telegram <code>"
+echo "3. Test the bot from Telegram."

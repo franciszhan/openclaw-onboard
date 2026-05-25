@@ -1,30 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# OpenClaw bootstrap (Ubuntu 22.04)
-# - no secrets
-# - harden SSH (Tailscale-only + key-only)
-# - install OpenClaw from GitHub source
+# Hermes Agent bootstrap (Ubuntu 22.04/24.04)
+# - no secrets in this script
+# - harden SSH: key-only, no root login, Tailscale-only ingress
+# - install Hermes Agent for a normal owner user
 #
-# This script is intended to be run via curl from a public repo.
-# It will download the companion scripts (openclaw-onboard, openclaw-update, tg_tools.py)
-# from the same repo via ONBOARD_RAW_BASE.
+# Intended to be run via curl from a public repo.
+# It downloads companion scripts from ONBOARD_RAW_BASE.
 
 export DEBIAN_FRONTEND=noninteractive
 
-OWNER_USER=${OWNER_USER:-openclaw}
-OWNER_PUBKEY=${OWNER_PUBKEY:-}  # optional: temporary key for initial access
-# How to install OpenClaw:
-# - "npm" (recommended): install global CLI and run as a daemon via systemd
-# - "source": clone and build (more fragile; requires pnpm)
-OPENCLAW_INSTALL=${OPENCLAW_INSTALL:-npm}
-OPENCLAW_REPO=${OPENCLAW_REPO:-https://github.com/openclaw/openclaw}
-OPENCLAW_BRANCH=${OPENCLAW_BRANCH:-main}
-
-# Raw base for *this* onboarding repo (required when running via curl):
+OWNER_USER=${OWNER_USER:-hermes}
+OWNER_PUBKEY=${OWNER_PUBKEY:-}  # optional: public key for owner access
 ONBOARD_RAW_BASE=${ONBOARD_RAW_BASE:-"https://raw.githubusercontent.com/franciszhan/openclaw-onboard/main"}
 
-LOG_FILE=/var/log/openclaw-bootstrap.log
+HERMES_OPT=/opt/hermes
+LOG_FILE=/var/log/hermes-bootstrap.log
+
 log() { echo "[bootstrap] $*" | tee -a "$LOG_FILE"; }
 
 if [[ $EUID -ne 0 ]]; then
@@ -38,8 +31,6 @@ log "starting (log: $LOG_FILE)"
 
 if [[ -z "$ONBOARD_RAW_BASE" ]]; then
   log "ERROR: ONBOARD_RAW_BASE is required."
-  log "Example:"
-  log "  ONBOARD_RAW_BASE=https://raw.githubusercontent.com/franciszhan/openclaw-onboard/main"
   exit 2
 fi
 
@@ -51,22 +42,8 @@ log "installing baseline deps"
 apt-get install -y \
   git ca-certificates curl gnupg \
   ufw fail2ban \
-  python3 python3-pip \
-  jq
-
-# Node.js: prefer nodesource (already used in many setups)
-if ! command -v node >/dev/null 2>&1; then
-  log "installing nodejs (nodesource 24.x)"
-  curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-  apt-get install -y nodejs
-fi
-
-log "installing python deps for telethon tooling (venv)"
-apt-get install -y python3-venv
-install -d -m 755 /opt/openclaw
-python3 -m venv /opt/openclaw/py
-/opt/openclaw/py/bin/pip install -U pip
-/opt/openclaw/py/bin/pip install telethon python-dotenv
+  python3 python3-pip python3-venv \
+  jq openssh-server
 
 log "installing tailscale"
 if ! command -v tailscale >/dev/null 2>&1; then
@@ -84,16 +61,19 @@ if ! id "$OWNER_USER" >/dev/null 2>&1; then
   usermod -aG sudo "$OWNER_USER"
 fi
 
-# Allow automation without ever setting a password for the owner user.
 log "configuring passwordless sudo for $OWNER_USER"
 SUDOERS_FILE="/etc/sudoers.d/90-${OWNER_USER}-nopasswd"
 echo "${OWNER_USER} ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE"
 
-# Pre-create OpenClaw state dir with strict perms to satisfy `openclaw security audit`.
-log "pre-creating OpenClaw state dir with strict perms"
-install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.openclaw"
+log "creating Hermes dirs with strict perms"
+install -d -m 755 "$HERMES_OPT"
+install -d -m 755 "$HERMES_OPT/bin"
+install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "$HERMES_OPT/secret"
+install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.hermes"
+printf '%s\n' "$OWNER_USER" > "$HERMES_OPT/OWNER"
+chmod 644 "$HERMES_OPT/OWNER"
 
 log "setting up SSH authorized_keys for $OWNER_USER"
 install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" "/home/$OWNER_USER/.ssh"
@@ -105,21 +85,18 @@ TMP_AK="$(mktemp)"
 #  1) OWNER_PUBKEY env override (if provided)
 #  2) /root/.ssh/authorized_keys (common on cloud images)
 #  3) existing owner authorized_keys (preserve prior access)
-
 if [[ -n "${OWNER_PUBKEY:-}" ]]; then
   printf '%s bootstrap\n' "${OWNER_PUBKEY//$'\r'/}" >> "$TMP_AK"
 fi
 
 for SRC in /root/.ssh/authorized_keys "$AK"; do
   if [[ -f "$SRC" ]]; then
-    # Strip CRLF, skip blank/comment-only lines, keep valid-looking key lines.
     sed -e 's/\r$//' "$SRC" \
       | awk 'NF && $1 !~ /^#/ {print}' \
       >> "$TMP_AK"
   fi
 done
 
-# Deduplicate exact lines while preserving order.
 awk '!seen[$0]++' "$TMP_AK" > "${TMP_AK}.dedup"
 mv "${TMP_AK}.dedup" "$TMP_AK"
 
@@ -136,7 +113,7 @@ rm -f "$TMP_AK"
 
 log "hardening sshd (disable root login + passwords)"
 install -d -m 755 /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/99-openclaw-hardening.conf <<'EOF'
+cat > /etc/ssh/sshd_config.d/99-hermes-hardening.conf <<'EOF'
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -148,9 +125,7 @@ EOF
 systemctl reload ssh || systemctl reload sshd || systemctl restart ssh || systemctl restart sshd
 
 log "configuring UFW (tailscale-only ssh)"
-# ensure sysctl is discoverable for ufw
 export PATH="/usr/sbin:/sbin:/usr/bin:/bin:$PATH"
-mkdir -p /opt/openclaw
 /usr/sbin/ufw --force reset
 /usr/sbin/ufw default deny incoming
 /usr/sbin/ufw default allow outgoing
@@ -171,37 +146,21 @@ enabled = true
 EOF
 systemctl enable --now fail2ban
 
-log "installing OpenClaw ($OPENCLAW_INSTALL)"
-install -d -m 755 /opt/openclaw
+log "installing Hermes Agent for $OWNER_USER"
+sudo -u "$OWNER_USER" -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash'
 
-if [[ "$OPENCLAW_INSTALL" == "npm" ]]; then
-  # Stable + easiest. Owner can switch channels later via `openclaw update --channel dev|beta|stable`.
-  npm install -g openclaw@latest
-  command -v openclaw >/dev/null 2>&1 || { log "ERROR: openclaw CLI not found after npm install"; exit 4; }
-  # Don't run the wizard here; leave secrets and pairing to the owner.
-else
-  log "Installing from source repo: $OPENCLAW_REPO ($OPENCLAW_BRANCH)"
-  # Source installs are more fragile; prefer pnpm.
-  npm install -g pnpm
-  rm -rf /opt/openclaw/app
-  git clone --branch "$OPENCLAW_BRANCH" "$OPENCLAW_REPO" /opt/openclaw/app
-  cd /opt/openclaw/app
-  pnpm install
-  pnpm build
+if ! sudo -u "$OWNER_USER" -H bash -lc 'export PATH="$HOME/.local/bin:$PATH"; command -v hermes >/dev/null 2>&1'; then
+  log "ERROR: hermes CLI not found after install"
+  log "Try: sudo -u $OWNER_USER -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash'"
+  exit 4
 fi
 
-log "installing service + helper scripts"
-install -d -m 755 /opt/openclaw/bin
-install -d -m 700 -o "$OWNER_USER" -g "$OWNER_USER" /opt/openclaw/secret
-
-curl -fsSL "$ONBOARD_RAW_BASE/bin/openclaw-onboard" -o /opt/openclaw/bin/openclaw-onboard
-curl -fsSL "$ONBOARD_RAW_BASE/bin/openclaw-update" -o /opt/openclaw/bin/openclaw-update
-curl -fsSL "$ONBOARD_RAW_BASE/bin/tg_tools.py" -o /opt/openclaw/bin/tg_tools.py
-chmod +x /opt/openclaw/bin/openclaw-onboard /opt/openclaw/bin/openclaw-update /opt/openclaw/bin/tg_tools.py
-
-# Do NOT install a gateway daemon here; let `openclaw onboard --install-daemon` handle it.
-# Installing a system-level service in bootstrap can conflict with the wizard.
+log "installing helper scripts"
+curl -fsSL "$ONBOARD_RAW_BASE/bin/hermes-onboard" -o "$HERMES_OPT/bin/hermes-onboard"
+curl -fsSL "$ONBOARD_RAW_BASE/bin/hermes-update" -o "$HERMES_OPT/bin/hermes-update"
+chmod +x "$HERMES_OPT/bin/hermes-onboard" "$HERMES_OPT/bin/hermes-update"
 
 log "bootstrap complete"
+log "IMPORTANT: run 'tailscale up' before ending this SSH session."
 log "Tailscale IP (once joined): $(tailscale ip -4 2>/dev/null || true)"
-log "Next (owner): sudo /opt/openclaw/bin/openclaw-onboard"
+log "Next: ssh $OWNER_USER@<tailscale-ip> and run /opt/hermes/bin/hermes-onboard"

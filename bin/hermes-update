@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "${OWNER_USER:-}" && -r /opt/hermes/OWNER ]]; then
+  OWNER_USER="$(tr -d '\n\r' < /opt/hermes/OWNER)"
+fi
+OWNER_USER=${OWNER_USER:-hermes}
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Run as root (sudo)" >&2
+  exit 1
+fi
+
+if ! id "$OWNER_USER" >/dev/null 2>&1; then
+  echo "User not found: $OWNER_USER" >&2
+  exit 1
+fi
+
+echo "Updating Hermes Agent for $OWNER_USER"
+sudo -u "$OWNER_USER" -H bash -lc 'export PATH="$HOME/.local/bin:$PATH"; hermes update'
+
+echo "Restarting Hermes gateway if installed"
+sudo -u "$OWNER_USER" -H bash -lc 'export PATH="$HOME/.local/bin:$PATH"; hermes gateway restart || true; hermes gateway status || true'

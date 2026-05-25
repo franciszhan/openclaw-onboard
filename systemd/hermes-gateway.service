@@ -1,0 +1,24 @@
+[Unit]
+Description=Hermes Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes
+Environment=PATH=/home/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/hermes/.local/bin/hermes gateway run
+Restart=on-failure
+RestartSec=2
+
+# Hardening. Prefer `hermes gateway install` for normal setup; this file is only
+# a reference for operators who intentionally want a system service.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hermes/.hermes /opt/hermes /tmp
+
+[Install]
+WantedBy=multi-user.target
